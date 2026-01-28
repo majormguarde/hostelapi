@@ -408,14 +408,18 @@ class DatabaseManager:
             if not self.connection:
                 self.connect()
 
+            # Создаем новый курсор для этого запроса
+            cursor = self.connection.cursor()
+            
             query = """
                 SELECT PROFILEID, NAME
                 FROM PROFILE
                 ORDER BY NAME
             """
 
-            self.cursor.execute(query)
-            rows = self.cursor.fetchall()
+            cursor.execute(query)
+            rows = cursor.fetchall()
+            cursor.close()
 
             profiles = []
             for row in rows:

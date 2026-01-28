@@ -411,26 +411,38 @@ class DatabaseManager:
             # Создаем новый курсор для этого запроса
             cursor = self.connection.cursor()
             
+            # Сначала получаем все профили
             query = """
-                SELECT p.PROFILEID, p.NAME, COUNT(c.CARDSID) as card_count
-                FROM PROFILE p
-                LEFT JOIN CARDS c ON p.PROFILEID = c.PROFILEID
-                GROUP BY p.PROFILEID, p.NAME
-                ORDER BY p.NAME
+                SELECT PROFILEID, NAME
+                FROM PROFILE
+                ORDER BY NAME
             """
 
             cursor.execute(query)
             rows = cursor.fetchall()
-            cursor.close()
 
             profiles = []
             for row in rows:
+                profile_id = row[0]
+                profile_name = row[1]
+                
+                # Для каждого профиля считаем количество карт
+                count_query = """
+                    SELECT COUNT(*)
+                    FROM CARDS
+                    WHERE PROFILEID = ?
+                """
+                cursor.execute(count_query, [profile_id])
+                count_result = cursor.fetchone()
+                card_count = count_result[0] if count_result else 0
+                
                 profiles.append({
-                    'id': row[0],
-                    'name': row[1],
-                    'card_count': row[2] if row[2] else 0
+                    'id': profile_id,
+                    'name': profile_name,
+                    'card_count': card_count
                 })
-
+            
+            cursor.close()
             return profiles
 
         except Exception as e:

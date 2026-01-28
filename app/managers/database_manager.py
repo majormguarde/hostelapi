@@ -214,7 +214,7 @@ class DatabaseManager:
                 self.connect()
 
             query = """
-                SELECT USERID, NAME, FLAGS, SFLAGS
+                SELECT USERID, NAME, FLAGS, SFLAGS, PASSWD
                 FROM USERS
                 WHERE NAME = ?
             """
@@ -226,11 +226,12 @@ class DatabaseManager:
                 logger.warning(f"Пользователь {username} не найден")
                 return None
 
-            # Проверка пароля (упрощенная - в реальном приложении нужна хеширование)
-            # Здесь предполагается, что пароль хранится в открытом виде или нужна специальная проверка
-            # TODO: Реализовать правильную проверку пароля
+            user_id, name, flags, sflags, stored_password = user
 
-            user_id, name, flags, sflags = user
+            # Проверка пароля
+            if not self._verify_password(password, stored_password):
+                logger.warning(f"Неверный пароль для пользователя {username}")
+                return None
 
             # Анализировать FLAGS и SFLAGS для определения прав доступа
             permissions = self._parse_permissions(flags, sflags)
@@ -246,6 +247,24 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"Ошибка при аутентификации пользователя: {str(e)}")
             return None
+
+    def _verify_password(self, password: str, stored_password: str) -> bool:
+        """
+        Проверить пароль
+        
+        Args:
+            password: Введенный пароль
+            stored_password: Сохраненный пароль
+            
+        Returns:
+            bool: True если пароль верный
+        """
+        # Если пароль не сохранен, проверяем простое совпадение
+        if not stored_password:
+            return False
+        
+        # Простая проверка (в реальном приложении нужно использовать хеширование)
+        return password == stored_password
 
     def _parse_permissions(self, flags: int, sflags: int) -> Dict[str, bool]:
         """

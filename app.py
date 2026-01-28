@@ -96,6 +96,9 @@ def login():
         username = request.form.get('username')
         password = request.form.get('password')
         
+        if not username or not password:
+            return render_template('login.html', error='Введите имя пользователя и пароль')
+        
         try:
             global db_manager
             if db_manager is None:
@@ -106,10 +109,13 @@ def login():
                 session['user_id'] = user['id']
                 session['username'] = user['username']
                 session['permissions'] = user['permissions']
+                logger.info(f"Пользователь {username} успешно вошел в систему")
                 return redirect(url_for('index'))
             else:
+                logger.warning(f"Неудачная попытка входа для пользователя {username}")
                 return render_template('login.html', error='Неверное имя пользователя или пароль')
         except Exception as e:
+            logger.error(f"Ошибка аутентификации: {str(e)}")
             return render_template('login.html', error=f'Ошибка аутентификации: {str(e)}')
     
     return render_template('login.html')

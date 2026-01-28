@@ -253,6 +253,10 @@ async function showEditCardForm(cardId) {
                 const option = document.createElement('option');
                 option.value = profile.id;
                 option.textContent = `${profile.name} (${profile.card_count})`;
+                // Установить выбранный профиль
+                if (profile.id === card.profile_id) {
+                    option.selected = true;
+                }
                 profileSelect.appendChild(option);
             });
         }

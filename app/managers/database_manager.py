@@ -449,7 +449,66 @@ class DatabaseManager:
             logger.error(f"Ошибка при получении списка профилей: {str(e)}")
             return []
 
-    def update_card_profile(self, card_id: int, profile_id: int) -> Dict:
+    def get_card_by_id(self, card_id: int) -> Optional[Dict]:
+        """
+        Получить полную информацию о карте по ID
+        
+        Args:
+            card_id: ID карты (CARDSID)
+            
+        Returns:
+            Dict с полной информацией о карте или None
+        """
+        try:
+            if not self.connection:
+                self.connect()
+
+            cursor = self.connection.cursor()
+            
+            query = """
+                SELECT 
+                    c.CARDSID,
+                    c.CARDNUM,
+                    c.OPENDATE,
+                    c.CLOSEDATE,
+                    c.ACTIVED,
+                    c.COMMENTS,
+                    c.PROFILEID,
+                    p.NAME as PROFILE_NAME
+                FROM CARDS c
+                LEFT JOIN PROFILE p ON c.PROFILEID = p.PROFILEID
+                WHERE c.CARDSID = ?
+            """
+
+            cursor.execute(query, [card_id])
+            row = cursor.fetchone()
+            cursor.close()
+
+            if not row:
+                return None
+
+            # Вычислить количество дней между датами
+            valid_from = row[2]
+            valid_until = row[3]
+            valid_days = 0
+            if valid_from and valid_until:
+                valid_days = (valid_until - valid_from).days
+
+            return {
+                'card_id': row[0],
+                'card_number': row[1],
+                'valid_from': row[2].isoformat() if row[2] else None,
+                'valid_until': row[3].isoformat() if row[3] else None,
+                'valid_days': valid_days,
+                'status': row[4],
+                'comments': row[5],
+                'profile_id': row[6],
+                'profile_name': row[7]
+            }
+
+        except Exception as e:
+            logger.error(f"Ошибка при получении информации о карте: {str(e)}")
+            return None
         """
         Обновить профиль доступа карты
         

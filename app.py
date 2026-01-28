@@ -239,8 +239,11 @@ def get_card(card_id):
         if db_manager is None:
             db_manager = DatabaseManager(session['db_path'])
         
-        result = db_manager.call_cardedit_procedure(action=0, card_number=card_id)
-        return jsonify(result)
+        card = db_manager.get_card_by_id(card_id)
+        if card:
+            return jsonify(card)
+        else:
+            return jsonify({'error': 'Card not found'}), 404
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 

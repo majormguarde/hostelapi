@@ -279,8 +279,8 @@ async function saveCard() {
             // Закрыть модальное окно
             bootstrap.Modal.getInstance(document.getElementById('cardModal')).hide();
             
-            // Перезагрузить список карт с первой страницы
-            loadCards(1);
+            // Применить текущие фильтры и перезагрузить список
+            applyFilters();
         }
         hideLoading();
     } catch (error) {
@@ -317,8 +317,8 @@ async function confirmDelete() {
             // Закрыть модальное окно
             bootstrap.Modal.getInstance(document.getElementById('deleteModal')).hide();
             
-            // Перезагрузить список карт с текущей страницы
-            loadCards(currentPage);
+            // Применить текущие фильтры и перезагрузить список
+            applyFilters();
         }
         hideLoading();
     } catch (error) {
@@ -414,8 +414,8 @@ async function saveProfile(cardId) {
                 }
             }
             
-            // Перезагрузить список карт с текущей страницы
-            await loadCards(currentPage);
+            // Применить текущие фильтры и перезагрузить список
+            applyFilters();
         } else {
             showMessage('Ошибка: ' + (result.error || 'Неизвестная ошибка'), 'danger');
         }

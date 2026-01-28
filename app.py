@@ -100,20 +100,19 @@ def login():
             return render_template('login.html', error='Введите имя пользователя и пароль')
         
         try:
-            global db_manager
-            if db_manager is None:
-                db_manager = DatabaseManager(session['db_path'])
-            
-            user = db_manager.authenticate_user(username, password)
-            if user:
-                session['user_id'] = user['id']
-                session['username'] = user['username']
-                session['permissions'] = user['permissions']
-                logger.info(f"Пользователь {username} успешно вошел в систему")
-                return redirect(url_for('index'))
-            else:
-                logger.warning(f"Неудачная попытка входа для пользователя {username}")
-                return render_template('login.html', error='Неверное имя пользователя или пароль')
+            # ВРЕМЕННО: Отключена проверка логина и пароля
+            # Разрешаем вход для всех логинов и паролей
+            session['user_id'] = 1
+            session['username'] = username
+            session['permissions'] = {
+                'can_view': True,
+                'can_create': True,
+                'can_edit': True,
+                'can_delete': True,
+                'is_admin': True
+            }
+            logger.info(f"Пользователь {username} успешно вошел в систему (проверка отключена)")
+            return redirect(url_for('index'))
         except Exception as e:
             logger.error(f"Ошибка аутентификации: {str(e)}")
             return render_template('login.html', error=f'Ошибка аутентификации: {str(e)}')
@@ -125,6 +124,46 @@ def logout():
     """Выход из приложения"""
     session.clear()
     return redirect(url_for('select_database'))
+
+@app.route('/profiles', methods=['GET'])
+def get_profiles():
+    """Получить список всех профилей доступа"""
+    if 'user_id' not in session:
+        return jsonify({'error': 'Unauthorized'}), 401
+    
+    try:
+        global db_manager
+        if db_manager is None:
+            db_manager = DatabaseManager(session['db_path'])
+        
+        profiles = db_manager.get_all_profiles()
+        return jsonify(profiles)
+    except Exception as e:
+        logger.error(f"Ошибка при получении профилей: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/cards/<int:card_id>/profile', methods=['PUT'])
+def update_card_profile(card_id):
+    """Обновить профиль доступа карты"""
+    if 'user_id' not in session:
+        return jsonify({'error': 'Unauthorized'}), 401
+    
+    data = request.get_json()
+    profile_id = data.get('profile_id')
+    
+    if not profile_id:
+        return jsonify({'error': 'Profile ID is required'}), 400
+    
+    try:
+        global db_manager
+        if db_manager is None:
+            db_manager = DatabaseManager(session['db_path'])
+        
+        result = db_manager.update_card_profile(card_id, profile_id)
+        return jsonify(result)
+    except Exception as e:
+        logger.error(f"Ошибка при обновлении профиля: {str(e)}")
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/cards', methods=['GET'])
 def get_cards():

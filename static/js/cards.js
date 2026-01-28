@@ -38,13 +38,20 @@ function displayCards(cards) {
         const row = document.createElement('tr');
         const status = card.status === 1 ? 'Активна' : 'Неактивна';
         const statusBadge = card.status === 1 ? 'badge-active' : 'badge-inactive';
+        const profileName = card.profile_name || 'Не указан';
+        
+        // Форматировать даты - только дата без времени
+        const validFrom = card.valid_from ? card.valid_from.split('T')[0] : '-';
+        const validUntil = card.valid_until ? card.valid_until.split('T')[0] : '-';
+        
+        const profileLink = `<a href="#" onclick="editProfile(${card.card_id}, '${profileName}'); return false;" class="text-decoration-none"><strong>${profileName}</strong></a>`;
 
         row.innerHTML = `
-            <td>${card.card_id || '-'}</td>
             <td>${card.card_number || '-'}</td>
             <td>${card.room || '-'}</td>
-            <td>${card.valid_from || '-'}</td>
-            <td>${card.valid_until || '-'}</td>
+            <td>${profileLink}</td>
+            <td>${validFrom}</td>
+            <td>${validUntil}</td>
             <td><span class="badge ${statusBadge}">${status}</span></td>
             <td>
                 <div class="action-buttons">
@@ -192,6 +199,103 @@ async function confirmDelete() {
         hideLoading();
     } catch (error) {
         showMessage('Ошибка при удалении карты: ' + error.message, 'danger');
+        hideLoading();
+    }
+}
+
+/**
+ * Редактировать профиль доступа карты
+ * @param {number} cardId - ID карты
+ * @param {string} currentProfile - Текущий профиль
+ */
+async function editProfile(cardId, currentProfile) {
+    try {
+        // Получить список профилей
+        const profiles = await makeRequest('/profiles', 'GET');
+        
+        if (!Array.isArray(profiles)) {
+            showMessage('Ошибка при загрузке профилей', 'danger');
+            return;
+        }
+        
+        // Создать модальное окно с выпадающим списком
+        const modal = document.createElement('div');
+        modal.className = 'modal fade';
+        modal.id = 'profileModal';
+        modal.tabIndex = -1;
+        modal.innerHTML = `
+            <div class="modal-dialog">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title">Изменить профиль доступа</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="mb-3">
+                            <label for="profileSelect" class="form-label">Выберите профиль:</label>
+                            <select class="form-select" id="profileSelect">
+                                ${profiles.map(p => `<option value="${p.id}" ${p.name === currentProfile ? 'selected' : ''}>${p.name}</option>`).join('')}
+                            </select>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+                        <button type="button" class="btn btn-primary" onclick="saveProfile(${cardId})">Сохранить</button>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        document.body.appendChild(modal);
+        const profileModal = new bootstrap.Modal(modal);
+        profileModal.show();
+        
+        // Удалить модальное окно после закрытия
+        modal.addEventListener('hidden.bs.modal', () => {
+            modal.remove();
+        });
+        
+    } catch (error) {
+        showMessage('Ошибка при загрузке профилей: ' + error.message, 'danger');
+    }
+}
+
+/**
+ * Сохранить новый профиль для карты
+ * @param {number} cardId - ID карты
+ */
+async function saveProfile(cardId) {
+    const profileSelect = document.getElementById('profileSelect');
+    const newProfileId = profileSelect.value;
+    
+    if (!newProfileId) {
+        showMessage('Выберите профиль', 'warning');
+        return;
+    }
+    
+    showLoading();
+    try {
+        const result = await makeRequest(`/cards/${cardId}/profile`, 'PUT', {
+            profile_id: parseInt(newProfileId)
+        });
+        
+        if (result.success) {
+            showMessage('Профиль успешно обновлен', 'success');
+            
+            // Закрыть модальное окно
+            const modal = bootstrap.Modal.getInstance(document.getElementById('profileModal'));
+            if (modal) {
+                modal.hide();
+            }
+            
+            // Перезагрузить список карт
+            loadCards();
+        } else {
+            showMessage('Ошибка: ' + (result.error || 'Неизвестная ошибка'), 'danger');
+        }
+        hideLoading();
+    } catch (error) {
+        showMessage('Ошибка при сохранении профиля: ' + error.message, 'danger');
         hideLoading();
     }
 }

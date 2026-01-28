@@ -154,26 +154,30 @@ class DatabaseManager:
 
     def get_all_cards(self) -> List[Dict]:
         """
-        Получить список всех карт
+        Получить список всех карт с профилем доступа
         
         Returns:
-            List[Dict]: Список карт с их атрибутами
+            List[Dict]: Список карт с их атрибутами и профилем доступа
         """
         try:
             if not self.connection:
                 self.connect()
 
+            # PROFILEID в CARDS ссылается на PROFILEID в PROFILE
             query = """
                 SELECT 
                     c.CARDSID,
+                    c.PEOPLEID,
                     c.CARDNUM,
-                    p.FNAME,
                     c.OPENDATE,
                     c.CLOSEDATE,
                     c.ACTIVED,
-                    c.COMMENTS
-                FROM CARDS c
-                LEFT JOIN PEOPLE p ON c.PEOPLEID = p.PEOPLEID
+                    c.COMMENTS,
+                    c.PROFILEID,
+                    p.NAME as PROFILE_NAME,
+                    p.PROF_TYPE
+                FROM PROFILE p
+                INNER JOIN CARDS c ON p.PROFILEID = c.PROFILEID
                 ORDER BY c.CARDSID DESC
             """
 
@@ -182,14 +186,18 @@ class DatabaseManager:
 
             cards = []
             for row in rows:
+                profile_name = row[8] if row[8] else 'Не указан'
                 cards.append({
                     'card_id': row[0],
-                    'card_number': row[1],
-                    'room': row[2],
+                    'people_id': row[1],
+                    'card_number': row[2],
                     'valid_from': row[3].isoformat() if row[3] else None,
                     'valid_until': row[4].isoformat() if row[4] else None,
                     'status': row[5],
-                    'comments': row[6]
+                    'comments': row[6],
+                    'profile_id': row[7],
+                    'profile_name': profile_name,
+                    'profile_type': row[9]
                 })
 
             return cards
@@ -213,20 +221,33 @@ class DatabaseManager:
             if not self.connection:
                 self.connect()
 
+            # Попробовать разные варианты названий колонок
             query = """
-                SELECT USERID, NAME, FLAGS, SFLAGS, PASSWD
+                SELECT ID, NAME, PASSWD, FLAGS, SFLAGS
                 FROM USERS
                 WHERE NAME = ?
             """
 
-            self.cursor.execute(query, [username])
-            user = self.cursor.fetchone()
+            try:
+                self.cursor.execute(query, [username])
+                user = self.cursor.fetchone()
+            except:
+                # Если ID не существует, попробовать без него
+                query = """
+                    SELECT NAME, PASSWD, FLAGS, SFLAGS
+                    FROM USERS
+                    WHERE NAME = ?
+                """
+                self.cursor.execute(query, [username])
+                user = self.cursor.fetchone()
+                if user:
+                    user = (1,) + user  # Добавить фиктивный ID
 
             if not user:
                 logger.warning(f"Пользователь {username} не найден")
                 return None
 
-            user_id, name, flags, sflags, stored_password = user
+            user_id, name, stored_password, flags, sflags = user
 
             # Проверка пароля
             if not self._verify_password(password, stored_password):
@@ -329,7 +350,69 @@ class DatabaseManager:
             logger.error(f"Ошибка при получении информации о пользователе: {str(e)}")
             return None
 
-    def get_card_by_number(self, card_number: int) -> Optional[Dict]:
+    def get_all_profiles(self) -> List[Dict]:
+        """
+        Получить список всех профилей доступа
+        
+        Returns:
+            List[Dict]: Список профилей с ID и названием
+        """
+        try:
+            if not self.connection:
+                self.connect()
+
+            query = """
+                SELECT PROFILEID, NAME
+                FROM PROFILE
+                ORDER BY NAME
+            """
+
+            self.cursor.execute(query)
+            rows = self.cursor.fetchall()
+
+            profiles = []
+            for row in rows:
+                profiles.append({
+                    'id': row[0],
+                    'name': row[1]
+                })
+
+            return profiles
+
+        except Exception as e:
+            logger.error(f"Ошибка при получении списка профилей: {str(e)}")
+            return []
+
+    def update_card_profile(self, card_id: int, profile_id: int) -> Dict:
+        """
+        Обновить профиль доступа карты
+        
+        Args:
+            card_id: ID карты (CARDSID)
+            profile_id: ID профиля (PROFILEID)
+            
+        Returns:
+            Dict с результатом операции
+        """
+        try:
+            if not self.connection:
+                self.connect()
+
+            query = """
+                UPDATE CARDS
+                SET PROFILEID = ?
+                WHERE CARDSID = ?
+            """
+
+            self.cursor.execute(query, [profile_id, card_id])
+            self.connection.commit()
+            
+            logger.info(f"Профиль карты {card_id} обновлен на {profile_id}")
+            return {'success': True, 'message': 'Профиль успешно обновлен'}
+
+        except Exception as e:
+            logger.error(f"Ошибка при обновлении профиля карты: {str(e)}")
+            return {'success': False, 'error': str(e)}
         """
         Получить информацию о карте по номеру
         

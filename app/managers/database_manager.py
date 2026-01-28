@@ -475,7 +475,7 @@ class DatabaseManager:
                     c.COMMENTS,
                     c.PROFILEID,
                     p.NAME as PROFILE_NAME,
-                    pe.FNAME as ROOM,
+                    pe.POST as ROOM,
                     pe.LNAME as DEP
                 FROM CARDS c
                 LEFT JOIN PROFILE p ON c.PROFILEID = p.PROFILEID
@@ -497,6 +497,10 @@ class DatabaseManager:
             if valid_from and valid_until:
                 valid_days = (valid_until - valid_from).days
 
+            room = row[8]
+
+            logger.info(f"Card {card_id}: POST={row[8]}, LNAME={row[9]}, COMMENTS={row[5]}")
+
             return {
                 'card_id': row[0],
                 'card_number': row[1],
@@ -507,13 +511,15 @@ class DatabaseManager:
                 'comments': row[5],
                 'profile_id': row[6],
                 'profile_name': row[7],
-                'room': row[8],
+                'room': room,
                 'dep': row[9]
             }
 
         except Exception as e:
             logger.error(f"Ошибка при получении информации о карте: {str(e)}")
             return None
+
+    def update_card_profile(self, card_id: int, profile_id: int) -> Dict:
         """
         Обновить профиль доступа карты
         
@@ -543,49 +549,3 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"Ошибка при обновлении профиля карты: {str(e)}")
             return {'success': False, 'error': str(e)}
-        """
-        Получить информацию о карте по номеру
-        
-        Args:
-            card_number: Номер карты
-            
-        Returns:
-            Dict с информацией о карте или None
-        """
-        try:
-            if not self.connection:
-                self.connect()
-
-            query = """
-                SELECT 
-                    c.CARDSID,
-                    c.CARDNUM,
-                    p.FNAME,
-                    c.OPENDATE,
-                    c.CLOSEDATE,
-                    c.ACTIVED,
-                    c.COMMENTS
-                FROM CARDS c
-                LEFT JOIN PEOPLE p ON c.PEOPLEID = p.PEOPLEID
-                WHERE c.CARDNUM = ?
-            """
-
-            self.cursor.execute(query, [card_number])
-            row = self.cursor.fetchone()
-
-            if not row:
-                return None
-
-            return {
-                'card_id': row[0],
-                'card_number': row[1],
-                'room': row[2],
-                'valid_from': row[3].isoformat() if row[3] else None,
-                'valid_until': row[4].isoformat() if row[4] else None,
-                'status': row[5],
-                'comments': row[6]
-            }
-
-        except Exception as e:
-            logger.error(f"Ошибка при получении информации о карте: {str(e)}")
-            return None

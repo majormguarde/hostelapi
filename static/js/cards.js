@@ -236,9 +236,16 @@ async function showEditCardForm(cardId) {
     try {
         const card = await makeRequest(`/cards/${cardId}`, 'GET');
         
+        // Установить значения полей
         document.getElementById('room').value = card.room || '';
         document.getElementById('card_number').value = card.card_number || '';
-        document.getElementById('valid_from').value = card.valid_from || '';
+        
+        // Преобразовать дату в формат YYYY-MM-DD для input type="date"
+        if (card.valid_from) {
+            const dateStr = card.valid_from.split('T')[0];
+            document.getElementById('valid_from').value = dateStr;
+        }
+        
         document.getElementById('valid_days').value = card.valid_days || '';
         document.getElementById('comments').value = card.comments || '';
         document.getElementById('dep').value = card.dep || 'ХОСТЕЛ';

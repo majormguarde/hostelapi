@@ -8,9 +8,71 @@
 - Firebird 2.5+
 - База данных guardee.fdb
 
-## Установка
+## Установка из Git
 
-### 1. Создать виртуальное окружение
+### 1. Клонировать репозиторий
+
+```bash
+git clone https://github.com/majormguarde-bit/hostelapi.git
+cd hostelapi
+```
+
+### 2. Создать виртуальное окружение
+
+```bash
+python -m venv venv
+.\venv\Scripts\Activate.ps1  # Windows PowerShell
+# или
+source venv/bin/activate  # Linux/Mac
+```
+
+### 3. Установить зависимости
+
+```bash
+pip install -r requirements.txt
+```
+
+### 4. Запуск приложения
+
+```bash
+python app.py
+```
+
+Приложение будет доступно по адресу: **http://127.0.0.1:5000**
+
+---
+
+## Установка из архива
+
+### 1. Распаковать архив
+
+```bash
+unzip hostelapi.zip
+cd hostelapi
+```
+
+### 2. Создать виртуальное окружение
+
+```bash
+python -m venv venv
+.\venv\Scripts\Activate.ps1  # Windows PowerShell
+# или
+source venv/bin/activate  # Linux/Mac
+```
+
+### 3. Установить зависимости
+
+```bash
+pip install -r requirements.txt
+```
+
+### 4. Запуск приложения
+
+```bash
+python app.py
+```
+
+Приложение будет доступно по адресу: **http://127.0.0.1:5000**
 
 ```bash
 python -m venv venv
@@ -172,5 +234,6 @@ pytest --cov=app tests/
 MIT
 
 ## Контакты
+- +7 (969) 728-71-71
 
 Для вопросов и предложений обратитесь к разработчикам.

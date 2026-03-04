@@ -20,17 +20,39 @@ class DatabaseManager:
         Инициализация DatabaseManager
         
         Args:
-            db_path: Путь к файлу базы данных guardee.fdb
+            db_path: Путь к файлу базы данных guardee.fdb (может быть в формате host:path)
             host: Хост базы данных (по умолчанию localhost)
             port: Порт базы данных (по умолчанию 3050)
             user: Пользователь БД (по умолчанию SYSDBA)
             password: Пароль БД (по умолчанию masterkey)
         """
-        self.db_path = db_path
+        self.original_db_path = db_path
         self.host = host
         self.port = port
         self.user = user
         self.password = password
+        
+        # Парсинг пути если он в формате host:path и host не задан явно (или равен дефолтному)
+        if ':' in db_path and host == 'localhost':
+            # Сначала пробуем разделить по первому двоеточию
+            parts = db_path.split(':', 1)
+            
+            # Проверка, что первая часть - это не буква диска Windows (C:\...)
+            # Если первая часть - одна буква, это диск.
+            # Но если путь вида 192.168.1.1:C:\path, то первая часть будет IP.
+            
+            first_part = parts[0]
+            
+            is_windows_drive = len(first_part) == 1 and first_part.isalpha()
+            
+            if not is_windows_drive:
+                self.host = first_part
+                self.db_path = parts[1]
+            else:
+                self.db_path = db_path
+        else:
+            self.db_path = db_path
+
         self.connection = None
         self.cursor = None
 

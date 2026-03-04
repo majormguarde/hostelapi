@@ -3,8 +3,9 @@
 Взаимодействует с базой данных Firebird через процедуру HOSTEL_CARDEDIT.
 """
 
-from flask import Flask, render_template, request, jsonify, session, redirect, url_for
+from flask import Flask, render_template, request, jsonify, session, redirect, url_for, make_response
 import os
+import json
 from dotenv import load_dotenv
 import tempfile
 import shutil
@@ -49,6 +50,17 @@ def index():
 @app.route('/select-database', methods=['GET', 'POST'])
 def select_database():
     """Выбор файла базы данных"""
+    history = []
+    try:
+        history_cookie = request.cookies.get('db_history')
+        if history_cookie:
+            history = json.loads(history_cookie)
+            if not isinstance(history, list):
+                history = []
+    except Exception as e:
+        logger.error(f"Error parsing history cookie: {e}")
+        history = []
+
     if request.method == 'POST':
         db_path = None
         
@@ -58,19 +70,31 @@ def select_database():
             if file and file.filename and file.filename.endswith('.fdb'):
                 # Сохранить загруженный файл во временную папку
                 temp_dir = tempfile.gettempdir()
-                db_path = os.path.join(temp_dir, file.filename)
+                uploaded_path = os.path.join(temp_dir, file.filename)
                 try:
-                    file.save(db_path)
+                    file.save(uploaded_path)
+                    db_path = uploaded_path
                 except Exception as e:
                     logger.error(f"Error saving uploaded file: {str(e)}")
-                    return render_template('select_database.html', error=f'Ошибка при сохранении файла: {str(e)}')
+                    return render_template('select_database.html', error=f'Ошибка при сохранении файла: {str(e)}', history=history)
         
         # Если файл не загружен, использовать введенный путь
         if not db_path:
             db_path = request.form.get('db_path')
         
-        if not db_path or not os.path.exists(db_path):
-            return render_template('select_database.html', error='Файл не найден или не выбран')
+        # Проверка пути (локальный или сетевой)
+        is_network_path = False
+        if db_path and ':' in db_path:
+            # Проверить, не является ли это буквой диска (C:\...)
+            parts = db_path.split(':', 1)
+            # Если первая часть - одна буква, это скорее всего диск Windows
+            if len(parts[0]) == 1 and parts[0].isalpha():
+                is_network_path = False
+            else:
+                is_network_path = True
+
+        if not db_path or (not is_network_path and not os.path.exists(db_path)):
+            return render_template('select_database.html', error='Файл не найден или не выбран', history=history)
         
         try:
             # Проверка подключения
@@ -79,12 +103,24 @@ def select_database():
             test_db.disconnect()
             
             session['db_path'] = db_path
-            return redirect(url_for('login'))
+            
+            # Обновить историю (только для введенных путей, не временных загруженных файлов)
+            if 'db_file' not in request.files or not request.files['db_file'].filename:
+                if db_path in history:
+                    history.remove(db_path)
+                history.insert(0, db_path)
+                history = history[:5] # Ограничить 5 записями
+            
+            resp = make_response(redirect(url_for('login')))
+            # Сохраняем куку на 30 дней
+            resp.set_cookie('db_history', json.dumps(history), max_age=30*24*60*60)
+            return resp
+            
         except Exception as e:
             logger.error(f"Database connection error: {str(e)}")
-            return render_template('select_database.html', error=f'Ошибка подключения: {str(e)}')
+            return render_template('select_database.html', error=f'Ошибка подключения: {str(e)}', history=history)
     
-    return render_template('select_database.html')
+    return render_template('select_database.html', history=history)
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():

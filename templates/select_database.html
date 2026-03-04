@@ -92,8 +92,29 @@
                     <div class="mb-3">
                         <label for="db_path" class="form-label">Или укажите путь вручную:</label>
                         <input type="text" class="form-control" id="db_path" name="db_path" 
-                               placeholder="Например: D:\db\guardee.fdb">
-                        <small class="form-text text-muted">Полный путь к файлу базы данных</small>
+                               placeholder="Например: D:\db\guardee.fdb или 192.168.1.10:/db/guardee.fdb" list="db_history_list">
+                        <datalist id="db_history_list">
+                            {% for path in history %}
+                            <option value="{{ path }}">
+                            {% endfor %}
+                        </datalist>
+                        
+                        {% if history %}
+                        <div class="mt-2">
+                            <small class="text-muted d-block mb-1">История подключений:</small>
+                            <div class="list-group">
+                                {% for path in history %}
+                                <button type="button" class="list-group-item list-group-item-action list-group-item-light py-2 px-3 small d-flex justify-content-between align-items-center" 
+                                        onclick='selectHistoryPath({{ path|tojson }})'>
+                                    <span class="text-truncate" style="max-width: 350px;">{{ path }}</span>
+                                    <span class="badge bg-secondary rounded-pill">Select</span>
+                                </button>
+                                {% endfor %}
+                            </div>
+                        </div>
+                        {% endif %}
+                        
+                        <small class="form-text text-muted mt-2">Полный путь к файлу базы данных (локальный или host:path)</small>
                     </div>
 
                     <button type="submit" class="btn btn-primary w-100">Подключиться</button>
@@ -149,6 +170,10 @@
             } else {
                 fileName.classList.remove('show');
             }
+        }
+
+        function selectHistoryPath(path) {
+            dbPathInput.value = path;
         }
     </script>
 </body>

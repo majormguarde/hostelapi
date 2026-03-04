@@ -1,6 +1,0 @@
-feat: Add deployment scripts and improve Firebird client loading
-
-- Add update.bat and run.bat for easier client deployment
-- Improve database_manager.py to handle WinError 193 (DLL architecture mismatch)
-- Add support for loading fbclient.dll from FB_LIBRARY_PATH env var or local directory
-- Add diagnose_fb.py script for debugging Firebird environment

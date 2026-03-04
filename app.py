@@ -80,29 +80,29 @@ def select_database():
         
         # Если файл не загружен, использовать введенный путь
         if not db_path:
-                    db_path = request.form.get('db_path')
-                
-                # Проверка пути (локальный или сетевой)
+            db_path = request.form.get('db_path')
+        
+        # Проверка пути (локальный или сетевой)
+        is_network_path = False
+        if db_path and ':' in db_path:
+            # Проверить, не является ли это буквой диска (C:\...)
+            parts = db_path.split(':', 1)
+            # Если первая часть - одна буква, это скорее всего диск Windows
+            if len(parts[0]) == 1 and parts[0].isalpha():
                 is_network_path = False
-                if db_path and ':' in db_path:
-                    # Проверить, не является ли это буквой диска (C:\...)
-                    parts = db_path.split(':', 1)
-                    # Если первая часть - одна буква, это скорее всего диск Windows
-                    if len(parts[0]) == 1 and parts[0].isalpha():
-                        is_network_path = False
-                    else:
-                        is_network_path = True
+            else:
+                is_network_path = True
 
-                if not db_path or (not is_network_path and not os.path.exists(db_path)):
-                    return render_template('select_database.html', error='Файл не найден или не выбран', history=history)
-                
-                try:
-                    # Проверка подключения
-                    test_db = DatabaseManager(db_path)
-                    test_db.connect()
-                    test_db.disconnect()
-                    
-                    session['db_path'] = db_path
+        if not db_path or (not is_network_path and not os.path.exists(db_path)):
+            return render_template('select_database.html', error='Файл не найден или не выбран', history=history)
+        
+        try:
+            # Проверка подключения
+            test_db = DatabaseManager(db_path)
+            test_db.connect()
+            test_db.disconnect()
+            
+            session['db_path'] = db_path
             
             # Обновить историю (только для введенных путей, не временных загруженных файлов)
             if 'db_file' not in request.files or not request.files['db_file'].filename:

@@ -8,40 +8,129 @@ import logging
 import os
 import sys
 import platform
+import ctypes
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
-# Попытка загрузить fbclient.dll из переменных окружения или стандартных путей
+_LOADED_FBCLIENT_PATH: str | None = None
+
+def _get_loaded_fbclient_version() -> str | None:
+    try:
+        import fdb.fbcore as fbcore
+        api = getattr(fbcore, 'api', None)
+        if not api:
+            return None
+        if not hasattr(api, 'isc_get_client_version'):
+            return None
+        buf = ctypes.create_string_buffer(256)
+        api.isc_get_client_version(buf)
+        version = buf.value.decode('ascii', errors='ignore').strip()
+        return version or None
+    except Exception:
+        return None
+
+def _parse_fb_major(version: str | None) -> int | None:
+    if not version:
+        return None
+    idx = version.lower().rfind('firebird')
+    if idx == -1:
+        return None
+    tail = version[idx + len('firebird'):].strip()
+    digits = []
+    for ch in tail:
+        if ch.isdigit():
+            digits.append(ch)
+        elif digits:
+            break
+    if not digits:
+        return None
+    try:
+        return int(''.join(digits))
+    except ValueError:
+        return None
+
 def load_fbclient():
     """
     Пытается загрузить библиотеку клиента Firebird (fbclient.dll/libfbclient.so).
     Проверяет переменную окружения FB_LIBRARY_PATH, затем локальную директорию.
     """
     try:
-        # 1. Проверяем переменную окружения
-        fb_lib_path = os.environ.get('FB_LIBRARY_PATH')
-        if fb_lib_path and os.path.exists(fb_lib_path):
-            logger.info(f"Loading Firebird client from env: {fb_lib_path}")
-            fdb.load_api(fb_lib_path)
-            return
+        candidates: List[str] = []
 
-        # 2. Проверяем текущую директорию (для удобства deployment)
-        local_lib = os.path.join(os.getcwd(), 'fbclient.dll')
-        if os.path.exists(local_lib):
-            logger.info(f"Loading Firebird client from local dir: {local_lib}")
-            fdb.load_api(local_lib)
-            return
+        fb_lib_path = os.environ.get('FB_LIBRARY_PATH') or os.environ.get('FIREBIRD_CLIENT')
+        if fb_lib_path:
+            fb_lib_path = os.path.expandvars(os.path.expanduser(fb_lib_path))
+            if os.path.isdir(fb_lib_path):
+                candidates.append(os.path.join(fb_lib_path, 'fbclient.dll'))
+            candidates.append(fb_lib_path)
 
-        # 3. Проверяем стандартные пути (x64/x86 в зависимости от Python)
-        # Это происходит автоматически внутри fdb, но можно попробовать явно, если нужно
-        
+        candidates.append(os.path.join(os.getcwd(), 'fbclient.dll'))
+
+        if platform.system().lower() == 'windows':
+            program_files = os.environ.get('ProgramFiles')
+            program_files_x86 = os.environ.get('ProgramFiles(x86)')
+            for base in [program_files, program_files_x86]:
+                if not base:
+                    continue
+                candidates.extend(
+                    [
+                        os.path.join(base, 'Firebird', 'Firebird_5_0', 'bin', 'fbclient.dll'),
+                        os.path.join(base, 'Firebird', 'Firebird_5_0', 'fbclient.dll'),
+                        os.path.join(base, 'FIrebird', 'Firebird_5_0', 'bin', 'fbclient.dll'),
+                        os.path.join(base, 'FIrebird', 'Firebird_5_0', 'fbclient.dll'),
+                        os.path.join(base, 'Firebird', 'Firebird_4_0', 'bin', 'fbclient.dll'),
+                        os.path.join(base, 'Firebird', 'Firebird_4_0', 'fbclient.dll'),
+                        os.path.join(base, 'FIrebird', 'Firebird_4_0', 'bin', 'fbclient.dll'),
+                        os.path.join(base, 'FIrebird', 'Firebird_4_0', 'fbclient.dll'),
+                        os.path.join(base, 'Firebird', 'Firebird_3_0', 'bin', 'fbclient.dll'),
+                        os.path.join(base, 'Firebird', 'Firebird_3_0', 'fbclient.dll'),
+                        os.path.join(base, 'FIrebird', 'Firebird_3_0', 'bin', 'fbclient.dll'),
+                        os.path.join(base, 'FIrebird', 'Firebird_3_0', 'fbclient.dll'),
+                        os.path.join(base, 'Firebird', 'Firebird_2_5', 'bin', 'fbclient.dll'),
+                        os.path.join(base, 'Firebird', 'Firebird_2_5', 'fbclient.dll'),
+                        os.path.join(base, 'FIrebird', 'Firebird_2_5', 'bin', 'fbclient.dll'),
+                        os.path.join(base, 'FIrebird', 'Firebird_2_5', 'fbclient.dll'),
+                    ]
+                )
+            candidates.extend(
+                [
+                    os.path.join(os.environ.get('SystemRoot', r'C:\Windows'), 'System32', 'fbclient.dll'),
+                    r'C:\GUARDE\tools\DLL\FBClient\System32\FBCLIENT.DLL',
+                ]
+            )
+
+        last_error: Exception | None = None
+        loaded_version: str | None = None
+        for path in candidates:
+            if not path:
+                continue
+            if not os.path.exists(path):
+                continue
+            try:
+                logger.info(f"Loading Firebird client: {path}")
+                fdb.load_api(path)
+                global _LOADED_FBCLIENT_PATH
+                _LOADED_FBCLIENT_PATH = path
+                loaded_version = _get_loaded_fbclient_version()
+                major = _parse_fb_major(loaded_version)
+                if major is None or major >= 3:
+                    return
+            except Exception as e:
+                last_error = e
+                continue
+
+        if last_error:
+            logger.warning(f"Failed to explicitly load Firebird client library: {last_error}")
     except Exception as e:
         logger.warning(f"Failed to explicitly load Firebird client library: {e}")
 
 # Вызываем загрузку при импорте модуля
 load_fbclient()
+
+def get_fbclient_path() -> str | None:
+    return _LOADED_FBCLIENT_PATH
 
 
 class DatabaseManager:
@@ -111,8 +200,38 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"Ошибка подключения к БД: {str(e)}")
             
-            # Обработка ошибки загрузки DLL (WinError 193)
             error_str = str(e)
+            if 'sqlcode: -923' in error_str.lower() or 'connection rejected by remote interface' in error_str.lower():
+                client_version = _get_loaded_fbclient_version()
+                msg = (
+                    "Ошибка: Firebird сервер отклонил подключение (connection rejected by remote interface).\n"
+                    f"Firebird Client: {client_version or 'не определено'}\n"
+                    "Чаще всего это означает, что загружен слишком старый fbclient.dll (например Firebird 2.5), "
+                    "который не поддерживает аутентификацию/протокол Firebird 5.\n"
+                    "Установите Firebird Client x64 версии 3/4/5 (под разрядность вашего Python) и укажите путь "
+                    "к fbclient.dll через переменную окружения FB_LIBRARY_PATH (можно путь к файлу или папке bin).\n"
+                    "После этого перезапустите приложение."
+                )
+                logger.error(msg)
+                raise Exception(msg) from e
+
+            if (
+                'fbclient.dll' in error_str.lower()
+                and ('could not find module' in error_str.lower() or 'winerror 126' in error_str.lower())
+            ):
+                fb_lib_path = os.environ.get('FB_LIBRARY_PATH') or os.environ.get('FIREBIRD_CLIENT')
+                msg = (
+                    "Ошибка: не удалось загрузить Firebird Client (fbclient.dll) или одну из его зависимостей.\n"
+                    f"FB_LIBRARY_PATH/FIREBIRD_CLIENT: {fb_lib_path!r}\n"
+                    "Проверьте, что путь указывает на существующий fbclient.dll (или папку bin с ним).\n"
+                    "Если fbclient.dll существует, установите Microsoft Visual C++ Redistributable (x64/x86) "
+                    "соответствующий разрядности вашего Python и клиента Firebird.\n"
+                    "После установки перезапустите приложение."
+                )
+                logger.error(msg)
+                raise Exception(msg) from e
+
+            # Обработка ошибки загрузки DLL (WinError 193)
             if "WinError 193" in error_str:
                 is_64bit = sys.maxsize > 2**32
                 py_arch = "64-bit" if is_64bit else "32-bit"

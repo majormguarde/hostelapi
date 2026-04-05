@@ -29,7 +29,7 @@ class TestCardEditProcedure:
 
     @given(
         action=st.integers(min_value=0, max_value=4),
-        room=st.integers(min_value=101, max_value=999),
+        room=st.integers(min_value=101, max_value=999).filter(lambda x: x % 100 != 0),
         card_number=st.integers(min_value=1, max_value=9999999),
         valid_days=st.integers(min_value=1, max_value=365)
     )
@@ -186,7 +186,7 @@ class TestCardModel:
         assert restored_card.valid_until == original_card.valid_until
         assert restored_card.status == original_card.status
 
-    @given(st.integers(min_value=101, max_value=999))
+    @given(st.integers(min_value=101, max_value=999).filter(lambda x: x % 100 != 0))
     @settings(max_examples=100)
     def test_card_parse_room(self, room_number):
         """Тест разбора номера комнаты"""

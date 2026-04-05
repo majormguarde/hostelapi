@@ -3,13 +3,14 @@
 Взаимодействует с базой данных Firebird через процедуру HOSTEL_CARDEDIT.
 """
 
-from flask import Flask, render_template, request, jsonify, session, redirect, url_for, make_response
+from flask import Flask, render_template, request, jsonify, session, redirect, url_for, make_response, flash
 import os
 import json
 from dotenv import load_dotenv
 import tempfile
 import shutil
 import logging
+from datetime import datetime
 
 load_dotenv()
 
@@ -31,6 +32,28 @@ from app.managers.auth_manager import AuthManager
 db_manager = None
 auth_manager = AuthManager()
 
+@app.context_processor
+def inject_db_path():
+    return {'db_path': session.get('db_path')}
+
+@app.route('/api/pick-db-file', methods=['POST'])
+def pick_db_file():
+    try:
+        import tkinter as tk
+        from tkinter import filedialog
+
+        root = tk.Tk()
+        root.withdraw()
+        root.attributes('-topmost', True)
+        path = filedialog.askopenfilename(
+            title='Выберите файл базы данных (.fdb)',
+            filetypes=[('Firebird database', '*.fdb'), ('All files', '*.*')],
+        )
+        root.destroy()
+        return jsonify({'path': path or None})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 @app.before_request
 def before_request():
     """Инициализация db_manager перед каждым запросом"""
@@ -50,7 +73,7 @@ def index():
 @app.route('/select-database', methods=['GET', 'POST'])
 def select_database():
     """Выбор файла базы данных"""
-    history = []
+    history: list = []
     try:
         history_cookie = request.cookies.get('db_history')
         if history_cookie:
@@ -60,6 +83,37 @@ def select_database():
     except Exception as e:
         logger.error(f"Error parsing history cookie: {e}")
         history = []
+
+    history_entries = []
+    for item in history:
+        if isinstance(item, dict) and 'path' in item:
+            history_entries.append(item)
+        elif isinstance(item, str):
+            history_entries.append({'path': item, 'ts': None, 'status': 'OK'})
+
+    history_paths = []
+    history_log_lines = []
+    for entry in history_entries:
+        path = entry.get('path')
+        if not path:
+            continue
+        history_paths.append(path)
+        ts = entry.get('ts')
+        status = entry.get('status') or ''
+        error_short = entry.get('error')
+        line = f"{ts or ''} {status} {path}".strip()
+        if error_short:
+            line = f"{line} | {error_short}"
+        history_log_lines.append(line)
+
+    selected_db_path = request.form.get('db_path', '')
+
+    firebird_client_path = None
+    try:
+        from app.managers.database_manager import get_fbclient_path
+        firebird_client_path = get_fbclient_path()
+    except Exception:
+        firebird_client_path = None
 
     if request.method == 'POST':
         db_path = None
@@ -104,23 +158,55 @@ def select_database():
             
             session['db_path'] = db_path
             
-            # Обновить историю (только для введенных путей, не временных загруженных файлов)
-            if 'db_file' not in request.files or not request.files['db_file'].filename:
-                if db_path in history:
-                    history.remove(db_path)
-                history.insert(0, db_path)
-                history = history[:5] # Ограничить 5 записями
+            ts = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            history_entries = [e for e in history_entries if e.get('path') != db_path]
+            history_entries.insert(0, {'path': db_path, 'ts': ts, 'status': 'OK'})
+            history_entries = history_entries[:10]
             
             resp = make_response(redirect(url_for('login')))
             # Сохраняем куку на 30 дней
-            resp.set_cookie('db_history', json.dumps(history), max_age=30*24*60*60)
+            resp.set_cookie('db_history', json.dumps(history_entries, ensure_ascii=False), max_age=30*24*60*60)
             return resp
             
         except Exception as e:
             logger.error(f"Database connection error: {str(e)}")
-            return render_template('select_database.html', error=f'Ошибка подключения: {str(e)}', history=history)
+            ts = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            err = str(e).replace('\n', ' ').strip()
+            if len(err) > 120:
+                err = err[:120] + '…'
+            if db_path:
+                history_entries = [entry for entry in history_entries if entry.get('path') != db_path]
+                history_entries.insert(0, {'path': db_path, 'ts': ts, 'status': 'ERR', 'error': err})
+                history_entries = history_entries[:10]
+            resp = make_response(
+                render_template(
+                    'select_database.html',
+                    error=f'Ошибка подключения: {str(e)}',
+                    history_paths=[e.get('path') for e in history_entries if e.get('path')],
+                    history_log='\n'.join(
+                        [
+                            (
+                                f"{entry.get('ts') or ''} {entry.get('status') or ''} {entry.get('path') or ''}".strip()
+                                + (f" | {entry.get('error')}" if entry.get('error') else '')
+                            )
+                            for entry in history_entries
+                            if entry.get('path')
+                        ]
+                    ),
+                    db_path_value=db_path or '',
+                    firebird_client_path=firebird_client_path,
+                )
+            )
+            resp.set_cookie('db_history', json.dumps(history_entries, ensure_ascii=False), max_age=30*24*60*60)
+            return resp
     
-    return render_template('select_database.html', history=history)
+    return render_template(
+        'select_database.html',
+        history_paths=history_paths,
+        history_log='\n'.join(history_log_lines),
+        db_path_value=selected_db_path,
+        firebird_client_path=firebird_client_path,
+    )
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -161,6 +247,20 @@ def logout():
     session.clear()
     return redirect(url_for('select_database'))
 
+@app.route('/disconnect-db')
+def disconnect_db():
+    """Отключиться от базы данных"""
+    global db_manager
+    if db_manager:
+        try:
+            db_manager.disconnect()
+        except Exception as e:
+            logger.error(f"Ошибка при отключении от БД: {str(e)}")
+        db_manager = None
+    session.pop('db_path', None)
+    flash('Отключение от базы данных выполнено', 'info')
+    return redirect(url_for('select_database'))
+
 @app.route('/test-api')
 def test_api():
     """Страница тестирования API"""
@@ -176,7 +276,9 @@ def test_procedure():
     if 'user_id' not in session:
         return jsonify({'error': 'Unauthorized'}), 401
     
-    data = request.get_json()
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({'error': 'Invalid JSON payload'}), 400
     
     try:
         global db_manager
@@ -221,7 +323,10 @@ def update_card_profile(card_id):
     if 'user_id' not in session:
         return jsonify({'error': 'Unauthorized'}), 401
     
-    data = request.get_json()
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({'error': 'Invalid JSON payload'}), 400
+
     profile_id = data.get('profile_id')
     
     if not profile_id:
@@ -273,7 +378,9 @@ def create_card():
     if 'user_id' not in session:
         return jsonify({'error': 'Unauthorized'}), 401
     
-    data = request.get_json()
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({'error': 'Invalid JSON payload'}), 400
     
     try:
         global db_manager
@@ -326,7 +433,9 @@ def update_card(card_id):
     if 'user_id' not in session:
         return jsonify({'error': 'Unauthorized'}), 401
     
-    data = request.get_json()
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({'error': 'Invalid JSON payload'}), 400
     
     try:
         global db_manager

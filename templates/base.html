@@ -10,7 +10,14 @@
 <body>
     <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
         <div class="container-fluid">
-            <a class="navbar-brand" href="/">Управление картами</a>
+            <div class="d-flex flex-column">
+                <a class="navbar-brand" href="/">Управление картами</a>
+                {% if db_path %}
+                <span class="navbar-text small text-break" style="max-width: 70vw; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;">
+                    {{ db_path }}
+                </span>
+                {% endif %}
+            </div>
             <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
                 <span class="navbar-toggler-icon"></span>
             </button>
@@ -20,6 +27,11 @@
                     <li class="nav-item">
                         <a class="nav-link" href="/test-api">Тестирование API</a>
                     </li>
+                    {% if db_path %}
+                    <li class="nav-item">
+                        <a class="nav-link text-warning" href="/disconnect-db">Отключиться от базы</a>
+                    </li>
+                    {% endif %}
                     <li class="nav-item">
                         <span class="navbar-text me-3">{{ session.get('username') }}</span>
                     </li>

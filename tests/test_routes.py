@@ -5,14 +5,29 @@
 import pytest
 from hypothesis import given, strategies as st, settings
 from datetime import date, timedelta
-from app import app as flask_app
+import importlib.util
+from pathlib import Path
+
+
+def _load_app_module():
+    app_py = Path(__file__).resolve().parents[1] / 'app.py'
+    spec = importlib.util.spec_from_file_location('hostelapi_app', app_py)
+    module = importlib.util.module_from_spec(spec)
+    assert spec and spec.loader
+    spec.loader.exec_module(module)
+    return module
+
+
+@pytest.fixture(scope='session')
+def app_module():
+    return _load_app_module()
 
 
 @pytest.fixture
-def client():
+def client(app_module):
     """Создать тестовый клиент Flask"""
-    flask_app.config['TESTING'] = True
-    with flask_app.test_client() as client:
+    app_module.app.config['TESTING'] = True
+    with app_module.app.test_client() as client:
         yield client
 
 
@@ -64,7 +79,8 @@ class TestSelectDatabaseRoute:
         """Тест POST с невалидным путем"""
         response = client.post('/select-database', data={'db_path': '/invalid/path.fdb'})
         assert response.status_code == 200
-        assert b'error' in response.data.lower() or b'не найден' in response.data.lower()
+        body = response.get_data(as_text=True).lower()
+        assert 'error' in body or 'не найден' in body
 
 
 class TestLoginRoute:
@@ -77,7 +93,8 @@ class TestLoginRoute:
         
         response = client.get('/login')
         assert response.status_code == 200
-        assert b'username' in response.data or b'пользователя' in response.data.lower()
+        body = response.get_data(as_text=True).lower()
+        assert 'username' in body or 'пользователя' in body
 
     def test_login_redirect_without_db(self, client):
         """Тест редиректа на выбор БД при отсутствии пути"""
@@ -130,6 +147,140 @@ class TestCardsRoute:
         assert response.status_code == 401
 
 
+class TestHostelCardeditApi:
+    """Тесты для API /api/test-procedure (HOSTEL_CARDEDIT)"""
+
+    def test_update_card_validity_period(self, client, authenticated_session, app_module):
+        class StubDBManager:
+            def __init__(self):
+                self.calls = []
+
+            def call_cardedit_procedure(
+                self,
+                action: int,
+                room: int = None,
+                card_number: int = None,
+                valid_from: str = None,
+                valid_days: int = None,
+                comments: str = None,
+                dep: str = 'ХОСТЕЛ',
+            ):
+                self.calls.append(
+                    {
+                        'action': action,
+                        'room': room,
+                        'card_number': card_number,
+                        'valid_from': valid_from,
+                        'valid_days': valid_days,
+                        'comments': comments,
+                        'dep': dep,
+                    }
+                )
+
+                start = date.fromisoformat(valid_from)
+                end = (start + timedelta(days=valid_days)).isoformat()
+
+                return {
+                    'people_id': 1,
+                    'profile_id': 1,
+                    'card_id': 1,
+                    'result_code': 1,
+                    'actived': 1,
+                    'valid_from': valid_from,
+                    'valid_to': end,
+                    'error': None,
+                }
+
+        stub = StubDBManager()
+        original_db_manager = app_module.db_manager
+        app_module.db_manager = stub
+        try:
+            payload = {
+                'action': 1,
+                'room': 1401,
+                'card_number': 1446644,
+                'valid_from': '2026-03-18',
+                'valid_days': 7,
+                'comments': 'Update validity period',
+                'dep': 'ХОСТЕЛ',
+            }
+
+            response = client.post('/api/test-procedure', json=payload)
+            assert response.status_code == 200
+
+            data = response.get_json()
+            assert data['error'] is None
+            assert data['result_code'] == 1
+            assert data['valid_from'] == payload['valid_from']
+            assert data['valid_to'] == '2026-03-25'
+
+            assert stub.calls == [payload]
+        finally:
+            app_module.db_manager = original_db_manager
+
+    def test_update_card_room_for_existing_card(self, client, authenticated_session, app_module):
+        class StubDBManager:
+            def __init__(self):
+                self.calls = []
+
+            def call_cardedit_procedure(
+                self,
+                action: int,
+                room: int = None,
+                card_number: int = None,
+                valid_from: str = None,
+                valid_days: int = None,
+                comments: str = None,
+                dep: str = 'ХОСТЕЛ',
+            ):
+                self.calls.append(
+                    {
+                        'action': action,
+                        'room': room,
+                        'card_number': card_number,
+                        'valid_from': valid_from,
+                        'valid_days': valid_days,
+                        'comments': comments,
+                        'dep': dep,
+                    }
+                )
+
+                return {
+                    'people_id': 1,
+                    'profile_id': 1,
+                    'card_id': 1,
+                    'result_code': 1,
+                    'actived': 1,
+                    'valid_from': valid_from,
+                    'valid_to': None,
+                    'error': None,
+                }
+
+        stub = StubDBManager()
+        original_db_manager = app_module.db_manager
+        app_module.db_manager = stub
+        try:
+            payload = {
+                'action': 1,
+                'room': 1502,
+                'card_number': 1446644,
+                'valid_from': '2026-03-18',
+                'valid_days': 30,
+                'comments': 'Update room',
+                'dep': 'ХОСТЕЛ',
+            }
+
+            response = client.post('/api/test-procedure', json=payload)
+            assert response.status_code == 200
+
+            data = response.get_json()
+            assert data['error'] is None
+            assert data['result_code'] == 1
+            assert stub.calls == [payload]
+        finally:
+            app_module.db_manager = original_db_manager
+
+
 class TestErrorHandlers:
     """Тесты для обработчиков ошибок"""
 
@@ -138,29 +289,14 @@ class TestErrorHandlers:
         response = client.get('/nonexistent')
         assert response.status_code == 404
 
-    def test_400_error(self, client):
+    def test_400_error(self, client, authenticated_session):
         """Тест обработки ошибки 400"""
         response = client.post('/cards', json=None)
-        # Flask может вернуть 400 или 415 в зависимости от конфигурации
         assert response.status_code in [400, 415]
 
 
-@given(
-    room=st.integers(min_value=101, max_value=999),
-    card_number=st.integers(min_value=1, max_value=9999999),
-    valid_days=st.integers(min_value=1, max_value=365)
-)
-@settings(max_examples=50)
-def test_create_card_property(client, authenticated_session, room, card_number, valid_days):
-    """
-    Property 1: Создание карты с валидными данными
-    Validates: Requirements 1.1, 1.3
-    
-    Проверяет, что карта может быть создана с валидными данными.
-    """
-    today = date.today().isoformat()
-    
-    # Этот тест требует реальной БД, поэтому пока пропускаем
+@pytest.mark.skip(reason='Требует реальной БД (property-тест отключен)')
+def test_create_card_property():
     pass
 
 

@@ -28,14 +28,14 @@ class ErrorHandler:
         logger.error(f"Database error: {error_msg}\n{traceback.format_exc()}")
         
         # Преобразовать технические ошибки в понятные сообщения
-        if 'connection' in error_msg.lower():
-            return {
-                'error': 'Ошибка подключения к базе данных. Проверьте параметры подключения.'
-            }, 503
-        elif 'timeout' in error_msg.lower():
+        if 'timeout' in error_msg.lower():
             return {
                 'error': 'Время ожидания ответа от базы данных истекло.'
             }, 504
+        elif 'connection' in error_msg.lower():
+            return {
+                'error': 'Ошибка подключения к базе данных. Проверьте параметры подключения.'
+            }, 503
         elif 'permission' in error_msg.lower():
             return {
                 'error': 'Недостаточно прав для выполнения операции.'

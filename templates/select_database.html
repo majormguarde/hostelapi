@@ -91,30 +91,32 @@
 
                     <div class="mb-3">
                         <label for="db_path" class="form-label">Или укажите путь вручную:</label>
-                        <input type="text" class="form-control" id="db_path" name="db_path" 
-                               placeholder="Например: D:\db\guardee.fdb или 192.168.1.10:/db/guardee.fdb" list="db_history_list">
+                        <div class="input-group">
+                            <input type="text" class="form-control" id="db_path" name="db_path" 
+                                   placeholder="Например: D:\db\guardee.fdb или 192.168.1.10:/db/guardee.fdb" list="db_history_list" value="{{ db_path_value|default('') }}">
+                            <button type="button" class="btn btn-outline-secondary" onclick="pickDbPath()">Выбрать</button>
+                        </div>
                         <datalist id="db_history_list">
-                            {% for path in history %}
+                            {% for path in history_paths %}
                             <option value="{{ path }}">
                             {% endfor %}
                         </datalist>
                         
-                        {% if history %}
+                        {% if history_log %}
                         <div class="mt-2">
-                            <small class="text-muted d-block mb-1">История подключений:</small>
-                            <div class="list-group">
-                                {% for path in history %}
-                                <button type="button" class="list-group-item list-group-item-action list-group-item-light py-2 px-3 small d-flex justify-content-between align-items-center" 
-                                        onclick='selectHistoryPath({{ path|tojson }})'>
-                                    <span class="text-truncate" style="max-width: 350px;">{{ path }}</span>
-                                    <span class="badge bg-secondary rounded-pill">Select</span>
-                                </button>
-                                {% endfor %}
-                            </div>
+                            <small class="text-muted d-block mb-1">История подключений (лог):</small>
+                            <textarea class="form-control small" rows="6" readonly style="font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;">{{ history_log }}</textarea>
                         </div>
                         {% endif %}
                         
                         <small class="form-text text-muted mt-2">Полный путь к файлу базы данных (локальный или host:path)</small>
+                    </div>
+
+                    <div class="mb-3">
+                        <small class="text-muted d-block mb-1">Firebird client library:</small>
+                        <div class="small text-break" style="font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;">
+                            {{ firebird_client_path|default('не определено') }}
+                        </div>
                     </div>
 
                     <button type="submit" class="btn btn-primary w-100">Подключиться</button>
@@ -166,14 +168,23 @@
                 const file = fileInput.files[0];
                 fileName.textContent = '✓ Выбран файл: ' + file.name;
                 fileName.classList.add('show');
-                dbPathInput.value = '';
+                dbPathInput.value = file.name;
             } else {
                 fileName.classList.remove('show');
             }
         }
 
-        function selectHistoryPath(path) {
-            dbPathInput.value = path;
+        async function pickDbPath() {
+            try {
+                const response = await fetch('/api/pick-db-file', { method: 'POST' });
+                const result = await response.json();
+                if (result && result.path) {
+                    dbPathInput.value = result.path;
+                    fileInput.value = '';
+                    fileName.classList.remove('show');
+                }
+            } catch (e) {
+            }
         }
     </script>
 </body>
